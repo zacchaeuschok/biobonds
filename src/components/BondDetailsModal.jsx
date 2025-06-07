@@ -49,7 +49,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex justify-between items-start">
             <div>
@@ -71,7 +71,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
             <Card>
               <CardContent className="p-4 text-center">
                 <TrendingUp className="w-6 h-6 mx-auto mb-2 text-green-500" />
-                <div className="text-2xl font-bold text-green-600 truncate">
+                <div className="text-2xl font-bold text-green-600">
                   {(bond.yieldRate * 100).toFixed(1)}%
                 </div>
                 <div className="text-xs text-muted-foreground">Yield Rate</div>
@@ -81,7 +81,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
             <Card>
               <CardContent className="p-4 text-center">
                 <Target className="w-6 h-6 mx-auto mb-2 text-blue-500" />
-                <div className="text-xl font-bold truncate" style={{ lineHeight: "1.2" }}>
+                <div className="text-lg font-bold" style={{ lineHeight: "1.2" }}>
                   ${bond.targetAmount.toLocaleString()}
                 </div>
                 <div className="text-xs text-muted-foreground">Target Amount</div>
@@ -91,7 +91,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
             <Card>
               <CardContent className="p-4 text-center">
                 <Users className="w-6 h-6 mx-auto mb-2 text-purple-500" />
-                <div className="text-2xl font-bold truncate">
+                <div className="text-2xl font-bold">
                   {progressPercentage.toFixed(0)}%
                 </div>
                 <div className="text-xs text-muted-foreground">Funded</div>
@@ -101,7 +101,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
             <Card>
               <CardContent className="p-4 text-center">
                 <Calendar className="w-6 h-6 mx-auto mb-2 text-orange-500" />
-                <div className="text-sm font-bold">
+                <div className="text-base font-bold">
                   {new Date(bond.maturityDate).toLocaleDateString()}
                 </div>
                 <div className="text-xs text-muted-foreground">Maturity Date</div>
@@ -196,11 +196,11 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <div className="text-muted-foreground">Amount Raised</div>
-                  <div className="font-medium text-lg">${bond.currentAmount.toLocaleString()}</div>
+                  <div className="font-medium text-base">${bond.currentAmount.toLocaleString()}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">Remaining Needed</div>
-                  <div className="font-medium text-lg">${remainingAmount.toLocaleString()}</div>
+                  <div className="font-medium text-base">${remainingAmount.toLocaleString()}</div>
                 </div>
               </div>
             </CardContent>

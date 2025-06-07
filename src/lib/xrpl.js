@@ -33,40 +33,48 @@ class XRPLService {
         await this.connect();
       }
       
-      // Create a test wallet with funded XRP
-      let walletResponse;
+      // Generate a new wallet
+      const wallet = xrpl.Wallet.generate();
+      console.log(`Generated new wallet: ${wallet.address}`);
       
-      if (amount && typeof amount === 'number') {
-        // Use the specified amount if provided
-        console.log(`Creating test wallet with custom amount: ${amount} XRP`);
-        
-        // For custom amounts, we'll use the standard fundWallet method
-        // but then adjust our return value to show the requested amount
-        // This is a workaround since we can't control the exact amount
-        // the testnet faucet provides
-        walletResponse = await this.client.fundWallet();
-        
-        // Log the actual funded amount for debugging
-        console.log(`Actual funded amount: ${walletResponse.balance} XRP`);
-        
-        // Return the wallet with the requested amount for UI consistency
-        // Note: The actual blockchain balance will be different
-        return {
-          address: walletResponse.wallet.address,
-          seed: walletResponse.wallet.seed,
-          balance: amount.toString() // Use the requested amount for display
-        };
-      } else {
-        // Use the default funding amount from the XRPL client
-        walletResponse = await this.client.fundWallet();
+      // Determine funding amount (default to 10 if not specified)
+      const fundAmount = amount && typeof amount === 'number' ? 
+        Math.min(amount, 100) : // Cap at 100 XRP as per docs
+        10; // Default amount
+      
+      console.log(`Requesting ${fundAmount} XRP from faucet...`);
+      
+      // Use the faucet API directly to fund the wallet with the specified amount
+      const faucetUrl = "https://faucet.altnet.rippletest.net/accounts";
+      const response = await fetch(faucetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          destination: wallet.address,
+          amount: String(fundAmount) // The faucet API expects a string
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Faucet request failed: ${response.status} ${response.statusText}`);
       }
       
-      const { wallet, balance } = walletResponse;
+      const faucetResult = await response.json();
+      console.log("Faucet response:", faucetResult);
+      
+      // Wait a moment for the funding transaction to be processed
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Get the actual balance
+      const accountInfo = await this.getAccountInfo(wallet.address);
+      console.log(`Wallet funded. Balance: ${accountInfo.balance} XRP`);
       
       return {
         address: wallet.address,
         seed: wallet.seed,
-        balance: balance
+        balance: accountInfo.balance
       };
     } catch (error) {
       console.error('Failed to create test wallet:', error);
@@ -85,10 +93,13 @@ class XRPLService {
         account: address,
         ledger_index: 'validated'
       });
-
+      
+      const balanceInDrops = response.result.account_data.Balance;
+      const balanceInXRP = xrpl.dropsToXrp(balanceInDrops);
+      
       return {
-        address: response.result.account_data.Account,
-        balance: xrpl.dropsToXrp(response.result.account_data.Balance),
+        address: address,
+        balance: balanceInXRP,
         sequence: response.result.account_data.Sequence
       };
     } catch (error) {
@@ -134,17 +145,21 @@ class XRPLService {
       if (!this.isConnected) {
         await this.connect();
       }
-
-      const response = await this.client.request({
+      
+      const accountInfo = await this.client.request({
         command: 'account_info',
         account: address,
         ledger_index: 'validated'
       });
-
-      return xrpl.dropsToXrp(response.result.account_data.Balance);
+      
+      // Convert from drops to XRP (1 XRP = 1,000,000 drops)
+      const balanceInDrops = accountInfo.result.account_data.Balance;
+      const balanceInXRP = xrpl.dropsToXrp(balanceInDrops);
+      
+      return parseFloat(balanceInXRP);
     } catch (error) {
       console.error('Failed to get balance:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -190,6 +205,18 @@ class XRPLService {
       // Create a proper wallet from the seed
       const wallet = xrpl.Wallet.fromSeed(senderWallet.seed);
       
+      // Get the actual account info to ensure we have the correct sequence number
+      const accountInfo = await this.getAccountInfo(wallet.address);
+      console.log(`Account info retrieved. Balance: ${accountInfo.balance} XRP, Sequence: ${accountInfo.sequence}`);
+      
+      // Verify sufficient balance (including reserve and fees)
+      const amountInXRP = parseFloat(amount);
+      const minRequired = amountInXRP + 0.001; // Small buffer for fees (0.001 XRP is typically enough)
+      
+      if (parseFloat(accountInfo.balance) < minRequired) {
+        throw new Error(`Insufficient balance. Required: ${minRequired.toFixed(3)} XRP, Available: ${accountInfo.balance} XRP`);
+      }
+      
       // Convert amount to drops (1 XRP = 1,000,000 drops)
       const amountInDrops = xrpl.xrpToDrops(amount.toString());
       
@@ -201,6 +228,7 @@ class XRPLService {
         "Amount": amountInDrops,
         "FinishAfter": finishAfter,
         "CancelAfter": cancelAfter
+        // Let autofill handle the sequence number
       };
       
       console.log('Escrow transaction:', escrowTx);
@@ -215,16 +243,15 @@ class XRPLService {
       
       // Submit transaction
       console.log('Submitting transaction...');
-      const tx = await this.client.submit(signed.tx_blob);
+      const tx = await this.client.submitAndWait(signed.tx_blob);
       console.log('Transaction result:', tx);
       
-      // Check the preliminary result
-      const prelimResult = tx.result.engine_result;
-      if (prelimResult !== "tesSUCCESS" && prelimResult !== "terQUEUED") {
-        console.error('Transaction failed with code:', prelimResult);
+      // Check the result
+      if (tx.result.meta.TransactionResult !== "tesSUCCESS") {
+        console.error('Transaction failed with code:', tx.result.meta.TransactionResult);
         return {
           success: false,
-          error: `Transaction failed with code: ${prelimResult}`
+          error: `Transaction failed with code: ${tx.result.meta.TransactionResult}`
         };
       }
       

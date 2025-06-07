@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
@@ -33,9 +33,26 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [txHash, setTxHash] = useState('');
+  const [actualBalance, setActualBalance] = useState(null);
   
   const { walletAddress, balance, wallet } = useXRPLStore();
   const { addInvestment, updateBond } = useBioBondsStore();
+
+  useEffect(() => {
+    const fetchActualBalance = async () => {
+      if (walletAddress) {
+        try {
+          const balance = await xrplService.getBalance(walletAddress);
+          setActualBalance(balance);
+        } catch (err) {
+          console.error("Failed to fetch actual balance:", err);
+          setActualBalance(null);
+        }
+      }
+    };
+    
+    fetchActualBalance();
+  }, [walletAddress]);
 
   const handleInvest = async () => {
     setError('');
@@ -50,22 +67,26 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
         throw new Error('Please enter a valid investment amount');
       }
       
-      if (amount > balance) {
-        throw new Error('Insufficient balance');
+      // Check if wallet is connected
+      if (!walletAddress || !wallet || !wallet.seed) {
+        throw new Error('Please connect your wallet first');
+      }
+      
+      // Refresh actual balance
+      const currentBalance = await xrplService.getBalance(walletAddress);
+      setActualBalance(currentBalance);
+      
+      // Calculate required amount (including a small buffer for fees)
+      const requiredAmount = amount + 0.001;
+      
+      if (requiredAmount > currentBalance) {
+        throw new Error(`Insufficient balance. Required: ${requiredAmount.toFixed(3)} XRP (including fees), Available: ${currentBalance} XRP`);
       }
 
       if (amount > (bond.targetAmount - bond.currentAmount)) {
         throw new Error('Investment amount exceeds remaining funding needed');
       }
 
-      // For demo purposes, create a new wallet for signing
-      // In production, this would use the user's actual wallet
-      console.log('Creating wallet for transaction signing...');
-      const walletInfo = await xrplService.createTestWallet();
-      if (!walletInfo || !walletInfo.address) {
-        throw new Error('Failed to create test wallet for transaction');
-      }
-      
       // Create a provider wallet for demo purposes
       console.log('Creating provider wallet...');
       const providerWalletInfo = await xrplService.createTestWallet();
@@ -78,10 +99,10 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
       const cancelAfter = now + (60 * 60 * 24 * 30); // 30 days from now
       const finishAfter = now + 60; // 1 minute from now
       
-      // Create real XRPL escrow
+      // Create real XRPL escrow using the connected wallet
       console.log('Creating escrow transaction...');
       const escrowResult = await xrplService.createEscrow({
-        senderWallet: walletInfo,
+        senderWallet: wallet,
         destinationAddress: providerWalletInfo.address,
         amount: amount,
         finishAfter: finishAfter,
@@ -160,7 +181,7 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Bond Summary */}
           <Card>
             <CardHeader className="pb-3">
@@ -193,36 +214,44 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
           </Card>
 
           {/* Wallet Info */}
-          <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-            <Wallet className="w-4 h-4" />
-            <div className="flex-1">
-              <div className="text-sm font-medium">Connected Wallet</div>
-              <div className="text-xs text-muted-foreground">
-                {walletAddress?.slice(0, 8)}...{walletAddress?.slice(-6)}
-              </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-medium">Connected Wallet</h3>
+              <p className="text-sm text-muted-foreground">
+                {walletAddress ? `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}` : 'No wallet connected'}
+              </p>
             </div>
-            <div className="text-right">
-              <div className="text-sm font-medium">{balance.toLocaleString()} XRP</div>
-              <div className="text-xs text-muted-foreground">Available</div>
-            </div>
+            {walletAddress && (
+              <Badge className="ml-2 px-2 py-1">
+                {actualBalance !== null ? (
+                  <span className="font-mono">{actualBalance.toFixed(2)} XRP</span>
+                ) : (
+                  <span className="font-mono">{balance} XRP</span>
+                )}
+                <span className="ml-1 text-xs text-muted-foreground">Available</span>
+              </Badge>
+            )}
           </div>
 
           {/* Investment Amount */}
           <div className="space-y-2">
-            <Label htmlFor="amount">Investment Amount (XRP)</Label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                id="amount"
-                type="number"
-                placeholder="0.00"
-                value={investmentAmount}
-                onChange={(e) => setInvestmentAmount(e.target.value)}
-                className="pl-10"
-                min="0"
-                step="0.01"
-              />
-            </div>
+            <Label htmlFor="investment-amount">Investment Amount (XRP)</Label>
+            <Input
+              id="investment-amount"
+              type="number"
+              value={investmentAmount}
+              onChange={(e) => setInvestmentAmount(e.target.value)}
+              placeholder="Enter amount"
+              disabled={isProcessing || !walletAddress}
+              min="0.1"
+              max={actualBalance ? (actualBalance - 0.001).toFixed(3) : "10"}
+              step="0.1"
+            />
+            {actualBalance !== null && (
+              <p className="text-xs text-muted-foreground">
+                Maximum investment: {(actualBalance - 0.001).toFixed(2)} XRP (reserves 0.001 XRP for fees)
+              </p>
+            )}
           </div>
 
           {/* Investment Summary */}

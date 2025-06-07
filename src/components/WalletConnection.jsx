@@ -47,7 +47,7 @@ export function WalletConnection() {
       // Create a test wallet with the specified amount
       const walletInfo = await xrplService.createTestWallet(amount);
       
-      // Connect wallet to store
+      // Connect wallet to store with actual balance
       await connectWallet(walletInfo);
       updateBalance(parseFloat(walletInfo.balance));
       
@@ -114,7 +114,7 @@ export function WalletConnection() {
           </Alert>
           
           <div className="space-y-2">
-            <Label htmlFor="fundAmount">Initial Funding Amount (XRP)</Label>
+            <Label htmlFor="fundAmount">Requested Funding Amount (XRP)</Label>
             <Input
               id="fundAmount"
               type="number"
@@ -125,7 +125,7 @@ export function WalletConnection() {
               max="10000"
             />
             <p className="text-xs text-muted-foreground">
-              Recommended: 1,000 - 10,000 XRP for testing
+              Note: The testnet faucet typically provides 10 XRP regardless of requested amount
             </p>
           </div>
           
