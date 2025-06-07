@@ -20,11 +20,19 @@ import {
   Users,
   Target,
   Shield,
-  Award
+  Award,
+  FileCheck
 } from "lucide-react";
+import { useState } from "react";
+import { CredentialVerifier } from "./CredentialVerifier";
+import { useXRPLStore } from "../lib/store";
 
 export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
   if (!bond) return null;
+
+  const { wallet } = useXRPLStore();
+  const [showCredentialDetails, setShowCredentialDetails] = useState(false);
+  const [selectedOutcome, setSelectedOutcome] = useState(null);
 
   const progressPercentage = (bond.currentAmount / bond.targetAmount) * 100;
   const remainingAmount = bond.targetAmount - bond.currentAmount;
@@ -44,6 +52,19 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
       case 'completed': return <CheckCircle className="w-4 h-4" />;
       case 'active': return <Clock className="w-4 h-4" />;
       default: return <TrendingUp className="w-4 h-4" />;
+    }
+  };
+
+  const handleVerifyCredential = (outcome) => {
+    setSelectedOutcome(outcome);
+    setShowCredentialDetails(true);
+  };
+
+  const handleVerificationComplete = (isValid, credential) => {
+    if (isValid && selectedOutcome && !selectedOutcome.achieved) {
+      // In a real app, you would update the outcome status in your backend
+      console.log(`Outcome verified: ${selectedOutcome.target}`);
+      // For demo purposes, we're just logging the verification
     }
   };
 
@@ -139,14 +160,51 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
                         </div>
                       )}
                     </div>
-                    {outcome.achieved && (
-                      <Badge variant="outline" className="text-green-600 border-green-600">
-                        Achieved
-                      </Badge>
-                    )}
+                    {outcome.achieved ? (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="text-green-600 border-green-600 flex items-center gap-1"
+                        onClick={() => handleVerifyCredential(outcome)}
+                      >
+                        <FileCheck className="w-3 h-3" />
+                        Verify
+                      </Button>
+                    ) : wallet?.address ? (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleVerifyCredential(outcome)}
+                      >
+                        Verify
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
               </div>
+
+              {/* Credential Verification Section */}
+              {showCredentialDetails && selectedOutcome && (
+                <div className="mt-4">
+                  <Separator className="my-4" />
+                  <h4 className="font-medium mb-3">Credential Verification</h4>
+                  <CredentialVerifier
+                    issuerAddress={bond.provider.address}
+                    subjectAddress={wallet?.address || ""}
+                    credentialType={`HealthOutcome_${bond.id}`}
+                    outcomeDescription={selectedOutcome.target}
+                    onVerificationComplete={handleVerificationComplete}
+                  />
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setShowCredentialDetails(false)}
+                    className="mt-2"
+                  >
+                    Hide Verification
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -226,7 +284,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-500" />
-                  <span>Cryptographic proof of outcome achievement</span>
+                  <span>Cryptographic proof of outcome achievement via XRPL DID credentials</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-500" />

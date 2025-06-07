@@ -22,7 +22,8 @@ import {
   AlertCircle,
   CheckCircle,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  FileCheck
 } from "lucide-react";
 import { useXRPLStore, useBioBondsStore } from '../lib/store';
 import { xrplService } from '../lib/xrpl';
@@ -34,15 +35,16 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
   const [success, setSuccess] = useState(false);
   const [txHash, setTxHash] = useState('');
   const [actualBalance, setActualBalance] = useState(null);
+  const [escrowData, setEscrowData] = useState(null);
   
-  const { walletAddress, balance, wallet } = useXRPLStore();
+  const { wallet } = useXRPLStore();
   const { addInvestment, updateBond } = useBioBondsStore();
 
   useEffect(() => {
     const fetchActualBalance = async () => {
-      if (walletAddress) {
+      if (wallet?.address) {
         try {
-          const balance = await xrplService.getBalance(walletAddress);
+          const balance = await xrplService.getBalance(wallet.address);
           setActualBalance(balance);
         } catch (err) {
           console.error("Failed to fetch actual balance:", err);
@@ -52,7 +54,7 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
     };
     
     fetchActualBalance();
-  }, [walletAddress]);
+  }, [wallet?.address]);
 
   const handleInvest = async () => {
     setError('');
@@ -68,12 +70,12 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
       }
       
       // Check if wallet is connected
-      if (!walletAddress || !wallet || !wallet.seed) {
+      if (!wallet?.address || !wallet?.seed) {
         throw new Error('Please connect your wallet first');
       }
       
       // Refresh actual balance
-      const currentBalance = await xrplService.getBalance(walletAddress);
+      const currentBalance = await xrplService.getBalance(wallet.address);
       setActualBalance(currentBalance);
       
       // Calculate required amount (including a small buffer for fees)
@@ -113,8 +115,17 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
         throw new Error(escrowResult.error || 'Escrow creation failed. Please try again.');
       }
       
-      // Store transaction hash
+      // Store transaction hash and escrow data
       setTxHash(escrowResult.txHash);
+      setEscrowData({
+        id: escrowResult.txHash,
+        sequence: escrowResult.escrowSequence,
+        amount: amount,
+        account: wallet.address,
+        destination: providerWalletInfo.address,
+        finishAfter: finishAfter,
+        cancelAfter: cancelAfter
+      });
       
       // Create investment record
       const investment = {
@@ -126,7 +137,9 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
         yieldEarned: 0,
         escrowTxHash: escrowResult.txHash,
         escrowSequence: escrowResult.escrowSequence,
-        cancelAfter: cancelAfter
+        cancelAfter: cancelAfter,
+        requiresCredential: true, // Flag that this investment requires credential verification
+        credentialType: `HealthOutcome_${bond.id}`
       };
 
       // Update bond current amount
@@ -163,195 +176,186 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
     return amount + calculateProjectedYield();
   };
 
-  const viewInExplorer = () => {
-    if (txHash) {
-      window.open(`https://test.bithomp.com/explorer/${txHash}`, '_blank');
-    }
+  const getMaxInvestment = () => {
+    if (actualBalance === null) return 0;
+    
+    // Leave some XRP for transaction fees
+    const maxFromBalance = Math.max(0, actualBalance - 0.001);
+    
+    // Don't exceed remaining funding needed
+    const remainingFunding = bond.targetAmount - bond.currentAmount;
+    
+    return Math.min(maxFromBalance, remainingFunding);
+  };
+
+  const handleMaxClick = () => {
+    const max = getMaxInvestment();
+    setInvestmentAmount(max.toString());
   };
 
   if (!bond) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Invest in {bond.title}</DialogTitle>
+          <DialogTitle className="text-xl font-bold">Invest in {bond.title}</DialogTitle>
           <DialogDescription>
-            Fund preventive healthcare and earn impact returns
+            Support this health initiative and earn impact yield on your investment.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
           {/* Bond Summary */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Bond Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Health Outcome:</span>
-                <span className="font-medium">{bond.healthOutcome}</span>
+            <CardContent className="p-4">
+              <div className="flex justify-between items-center mb-4">
+                <div className="font-medium">{bond.provider.name}</div>
+                <Badge>{bond.category}</Badge>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Yield Rate:</span>
-                <span className="font-medium text-green-600">
-                  {(bond.yieldRate * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Maturity:</span>
-                <span className="font-medium">
-                  {new Date(bond.maturityDate).toLocaleDateString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Remaining:</span>
-                <span className="font-medium">
-                  ${(bond.targetAmount - bond.currentAmount).toLocaleString()}
-                </span>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-sm text-muted-foreground">Yield Rate</div>
+                  <div className="font-bold text-green-600">{(bond.yieldRate * 100).toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Target</div>
+                  <div className="font-bold">${bond.targetAmount.toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Maturity</div>
+                  <div className="font-bold">{new Date(bond.maturityDate).toLocaleDateString()}</div>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Wallet Info */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-medium">Connected Wallet</h3>
-              <p className="text-sm text-muted-foreground">
-                {walletAddress ? `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}` : 'No wallet connected'}
-              </p>
-            </div>
-            {walletAddress && (
-              <Badge className="ml-2 px-2 py-1">
-                {actualBalance !== null ? (
-                  <span className="font-mono">{actualBalance.toFixed(2)} XRP</span>
-                ) : (
-                  <span className="font-mono">{balance} XRP</span>
+          {/* Investment Form */}
+          {!success ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="investment-amount">Investment Amount (XRP)</Label>
+                <div className="relative">
+                  <Input
+                    id="investment-amount"
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={investmentAmount}
+                    onChange={(e) => setInvestmentAmount(e.target.value)}
+                    placeholder="Enter amount"
+                    disabled={isProcessing}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-7 px-2"
+                    onClick={handleMaxClick}
+                    disabled={isProcessing}
+                  >
+                    Max
+                  </Button>
+                </div>
+                {actualBalance !== null && (
+                  <div className="text-xs text-muted-foreground flex justify-between">
+                    <span>Available: {actualBalance.toFixed(3)} XRP</span>
+                    <span>Max Investment: {getMaxInvestment().toFixed(3)} XRP</span>
+                  </div>
                 )}
-                <span className="ml-1 text-xs text-muted-foreground">Available</span>
-              </Badge>
-            )}
-          </div>
+              </div>
 
-          {/* Investment Amount */}
-          <div className="space-y-2">
-            <Label htmlFor="investment-amount">Investment Amount (XRP)</Label>
-            <Input
-              id="investment-amount"
-              type="number"
-              value={investmentAmount}
-              onChange={(e) => setInvestmentAmount(e.target.value)}
-              placeholder="Enter amount"
-              disabled={isProcessing || !walletAddress}
-              min="0.1"
-              max={actualBalance ? (actualBalance - 0.001).toFixed(3) : "10"}
-              step="0.1"
-            />
-            {actualBalance !== null && (
-              <p className="text-xs text-muted-foreground">
-                Maximum investment: {(actualBalance - 0.001).toFixed(2)} XRP (reserves 0.001 XRP for fees)
-              </p>
-            )}
-          </div>
-
-          {/* Investment Summary */}
-          {investmentAmount && parseFloat(investmentAmount) > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" />
-                  Investment Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Investment:</span>
-                  <span className="font-medium">{parseFloat(investmentAmount).toLocaleString()} XRP</span>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-muted-foreground">Projected Yield</div>
+                  <div className="font-medium text-green-600">
+                    {calculateProjectedYield().toFixed(3)} XRP
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Projected Yield:</span>
-                  <span className="font-medium text-green-600">
-                    {calculateProjectedYield().toLocaleString()} XRP
-                  </span>
+                <div>
+                  <div className="text-muted-foreground">Maturity Value</div>
+                  <div className="font-medium">
+                    {calculateMaturityValue().toFixed(3)} XRP
+                  </div>
                 </div>
-                <Separator />
-                <div className="flex justify-between font-medium">
-                  <span>Total at Maturity:</span>
-                  <span className="text-green-600">
-                    {calculateMaturityValue().toLocaleString()} XRP
-                  </span>
+              </div>
+
+              <Separator />
+
+              {/* Credential Verification Info */}
+              <div className="bg-blue-50 p-3 rounded-md">
+                <div className="flex items-start gap-3">
+                  <FileCheck className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-blue-700">Verified Health Outcomes</h4>
+                    <p className="text-sm text-blue-600 mt-1">
+                      Your investment will be secured by XRPL escrow and only released when 
+                      health outcomes are verified using DID credentials on the blockchain.
+                    </p>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              </div>
 
-          {/* Security Notice */}
-          <Alert>
-            <Shield className="h-4 w-4" />
-            <AlertDescription className="text-xs">
-              Your investment is secured by XRPL escrow. Funds are only released when 
-              verified health outcomes are achieved.
-            </AlertDescription>
-          </Alert>
-
-          {/* Error Display */}
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Success Display */}
-          {success && (
-            <Alert className="border-green-200 bg-green-50">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">
-                <div className="space-y-2">
-                  <p>Investment successful! Your BioBond escrow has been created.</p>
-                  {txHash && (
-                    <div className="flex items-center gap-2 text-xs">
-                      <span>Transaction: {txHash.slice(0, 8)}...{txHash.slice(-6)}</span>
-                      <Button 
-                        variant="ghost" 
-                        size="xs" 
-                        className="h-6 px-2"
-                        onClick={viewInExplorer}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              onClick={onClose}
-              className="flex-1"
-              disabled={isProcessing}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleInvest}
-              className="flex-1"
-              disabled={!investmentAmount || parseFloat(investmentAmount) <= 0 || isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Creating Escrow...
-                </>
-              ) : (
-                'Invest Now'
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               )}
-            </Button>
-          </div>
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={onClose} className="flex-1" disabled={isProcessing}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleInvest} 
+                  className="flex-1" 
+                  disabled={isProcessing || !investmentAmount}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    'Invest Now'
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-md">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                  <h3 className="font-medium text-green-700">Investment Successful!</h3>
+                </div>
+                <p className="text-green-600 text-sm mb-3">
+                  Your investment of {parseFloat(investmentAmount).toFixed(3)} XRP has been secured in an XRPL escrow.
+                </p>
+                <div className="bg-white bg-opacity-50 p-3 rounded text-sm">
+                  <div className="mb-2">
+                    <span className="text-gray-500">Transaction Hash: </span>
+                    <a 
+                      href={`https://testnet.xrpl.org/transactions/${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline flex items-center gap-1"
+                    >
+                      <span className="font-mono">{txHash.substring(0, 12)}...</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Funds will be released when: </span>
+                    <span className="font-medium">Health outcomes are verified with XRPL credentials</span>
+                  </div>
+                </div>
+              </div>
+              <Button onClick={onClose} className="w-full">
+                Close
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

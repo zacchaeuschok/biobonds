@@ -1,5 +1,6 @@
 import * as xrpl from 'xrpl';
 import { XRPL_CONFIG } from './types.js';
+import { useXRPLStore } from './store';
 
 class XRPLService {
   constructor() {
@@ -272,75 +273,282 @@ class XRPLService {
   async finishEscrow(params) {
     try {
       const { 
-        finisherWallet, 
-        ownerAddress, 
-        escrowSequence, 
-        condition, 
-        fulfillment 
+        escrowId,
+        escrowOwner,
+        destinationAddress,
+        sequence,
+        wallet
       } = params;
 
-      if (!this.isConnected) {
+      // Connect to the XRPL if not already connected
+      if (!this.client.isConnected()) {
         await this.connect();
       }
 
-      const finishTx = {
-        TransactionType: 'EscrowFinish',
-        Account: finisherWallet.address,
-        Owner: ownerAddress,
-        OfferSequence: escrowSequence,
-        Condition: condition,
-        Fulfillment: fulfillment
+      // Create a wallet instance from the provided wallet info
+      const xrplWallet = xrpl.Wallet.fromSeed(wallet.seed);
+
+      // Prepare the EscrowFinish transaction
+      const escrowFinishTx = {
+        TransactionType: "EscrowFinish",
+        Account: xrplWallet.address,
+        Owner: escrowOwner,
+        OfferSequence: sequence,
       };
 
-      const prepared = await this.client.autofill(finishTx);
-      const signed = finisherWallet.sign(prepared);
-      const result = await this.client.submitAndWait(signed.tx_blob);
-
+      // Autofill transaction details
+      const preparedTx = await this.client.autofill(escrowFinishTx);
+      
+      // Sign the transaction
+      const signedTx = xrplWallet.sign(preparedTx);
+      
+      console.log('Submitting EscrowFinish transaction...');
+      
+      // Submit the transaction and wait for validation
+      const submitResult = await this.client.submitAndWait(signedTx.tx_blob);
+      
+      if (submitResult.result.meta.TransactionResult !== "tesSUCCESS") {
+        throw new Error(`Failed to finish escrow: ${submitResult.result.meta.TransactionResult}`);
+      }
+      
+      console.log('Escrow finished successfully:', submitResult.result.hash);
+      
       return {
-        success: result.result.meta.TransactionResult === 'tesSUCCESS',
-        txHash: result.result.hash
+        hash: submitResult.result.hash,
+        ledgerIndex: submitResult.result.ledger_index,
+        status: 'success'
       };
     } catch (error) {
-      console.error('Failed to finish escrow:', error);
+      console.error('Error finishing escrow:', error);
       throw error;
     }
   }
 
-  // Mock credential creation (would integrate with XRPL DID in production)
   async createHealthCredential(params) {
     try {
       const { 
         issuerAddress, 
         subjectAddress, 
         credentialType, 
-        outcomeData 
+        outcomeData,
+        expirationDays = 365 // Default expiration of 1 year
       } = params;
 
-      // In a real implementation, this would create a verifiable credential
-      // using XRPL's DID functionality
+      // Connect to the XRPL if not already connected
+      if (!this.client.isConnected()) {
+        await this.connect();
+      }
+
+      // Convert credential type to hex format as required by XRPL
+      const credentialTypeHex = this.convertStringToHex(credentialType).toUpperCase();
+      console.log(`Encoded credential_type as hex: ${credentialTypeHex}`);
+
+      // Get the issuer wallet to sign the transaction
+      const issuerWallet = await this.getWalletByAddress(issuerAddress);
+      if (!issuerWallet) {
+        throw new Error('Issuer wallet not found or not accessible');
+      }
+
+      // Calculate expiration date (in seconds since XRPL epoch)
+      const now = Math.floor(Date.now() / 1000);
+      const xrplEpoch = 946684800; // 2000-01-01T00:00:00Z
+      const expirationTime = now + (expirationDays * 24 * 60 * 60) - xrplEpoch;
+
+      // Prepare the credential creation transaction
+      const credentialTx = {
+        TransactionType: "CredentialSet",
+        Account: issuerAddress,
+        Subject: subjectAddress,
+        CredentialType: credentialTypeHex,
+        Expiration: expirationTime,
+        Fields: [
+          {
+            Field: this.convertStringToHex("outcomeData").toUpperCase(),
+            Value: this.convertStringToHex(JSON.stringify(outcomeData)).toUpperCase()
+          }
+        ]
+      };
+
+      // Autofill transaction details
+      const preparedTx = await this.client.autofill(credentialTx);
+      
+      // Sign the transaction with the issuer's wallet
+      const signedTx = issuerWallet.sign(preparedTx);
+      
+      // Submit the transaction to the network
+      console.log('Submitting credential transaction...');
+      const submitResult = await this.client.submitAndWait(signedTx.tx_blob);
+      
+      if (submitResult.result.meta.TransactionResult !== "tesSUCCESS") {
+        throw new Error(`Failed to create credential: ${submitResult.result.meta.TransactionResult}`);
+      }
+      
+      // Return the credential details
       const credential = {
-        id: `cred_${Date.now()}`,
+        id: submitResult.result.hash,
         issuer: issuerAddress,
         subject: subjectAddress,
         type: credentialType,
+        typeHex: credentialTypeHex,
         issuanceDate: new Date().toISOString(),
-        credentialSubject: {
-          id: subjectAddress,
-          healthOutcome: outcomeData
-        },
-        proof: {
-          type: 'Ed25519Signature2020',
-          created: new Date().toISOString(),
-          verificationMethod: `${issuerAddress}#key-1`,
-          proofPurpose: 'assertionMethod',
-          proofValue: 'mock_signature_' + Math.random().toString(36)
-        }
+        expirationDate: new Date((expirationTime + xrplEpoch) * 1000).toISOString(),
+        txHash: submitResult.result.hash,
+        ledgerIndex: submitResult.result.ledger_index,
+        outcomeData: outcomeData
       };
 
       return credential;
     } catch (error) {
       console.error('Failed to create health credential:', error);
       throw error;
+    }
+  }
+
+  async verifyCredential(params) {
+    try {
+      const { issuerAddress, subjectAddress, credentialType } = params;
+      
+      // Connect to the XRPL if not already connected
+      if (!this.client.isConnected()) {
+        await this.connect();
+      }
+
+      // Convert credential type to hex format
+      const credentialTypeHex = this.convertStringToHex(credentialType).toUpperCase();
+      console.log(`Encoded credential_type as hex: ${credentialTypeHex}`);
+
+      // Prepare the ledger entry request to look up the credential
+      const ledgerEntryRequest = {
+        command: "ledger_entry",
+        credential: {
+          subject: subjectAddress,
+          issuer: issuerAddress,
+          credential_type: credentialTypeHex,
+        },
+        ledger_index: "validated",
+      };
+      
+      console.log("Looking up credential...");
+      console.log(JSON.stringify(ledgerEntryRequest, null, 2));
+
+      // Request the credential from the ledger
+      const response = await this.client.request(ledgerEntryRequest);
+      
+      if (!response.result || !response.result.node) {
+        console.log("Credential was not found");
+        return { isValid: false, error: "Credential not found" };
+      }
+
+      const credential = response.result.node;
+      console.log("Found credential:", JSON.stringify(credential, null, 2));
+
+      // Check if the credential has been accepted by the subject
+      // LSF_ACCEPTED flag (0x00010000 = 65536)
+      if (!(credential.Flags & 65536)) {
+        console.log("Credential is not accepted by the subject.");
+        return { isValid: false, error: "Credential not accepted by the subject" };
+      }
+
+      // Check if the credential has expired
+      if (credential.Expiration) {
+        // Get the close time of the most recently validated ledger
+        const ledgerResponse = await this.client.request({
+          command: "ledger",
+          ledger_index: "validated",
+        });
+        
+        const ledgerCloseTime = ledgerResponse.result.ledger.close_time;
+        const xrplEpoch = 946684800; // 2000-01-01T00:00:00Z
+        
+        if (credential.Expiration + xrplEpoch <= ledgerCloseTime) {
+          console.log("Credential has expired.");
+          return { isValid: false, error: "Credential has expired" };
+        }
+      }
+
+      // Extract outcome data from the credential fields
+      let outcomeData = {};
+      if (credential.Fields && credential.Fields.length > 0) {
+        const outcomeField = credential.Fields.find(f => 
+          f.Field === this.convertStringToHex("outcomeData").toUpperCase()
+        );
+        
+        if (outcomeField && outcomeField.Value) {
+          try {
+            const hexString = outcomeField.Value;
+            let str = '';
+            for (let i = 0; i < hexString.length; i += 2) {
+              str += String.fromCharCode(parseInt(hexString.substr(i, 2), 16));
+            }
+            outcomeData = JSON.parse(str);
+          } catch (e) {
+            console.error("Error parsing outcome data:", e);
+          }
+        }
+      }
+
+      // Credential exists, is accepted, and has not expired
+      console.log("Credential is valid.");
+      
+      // Format the credential for the UI
+      const formattedCredential = {
+        id: credential.index,
+        issuer: issuerAddress,
+        subject: subjectAddress,
+        type: credentialType,
+        issuanceDate: new Date((credential.PreviousTxnLgrSeq * 10) + 946684800000).toISOString(),
+        expirationDate: credential.Expiration ? 
+          new Date((credential.Expiration + 946684800) * 1000).toISOString() : null,
+        outcomeData: outcomeData,
+        ledgerIndex: credential.LedgerEntryType,
+        flags: credential.Flags,
+        txHash: credential.PreviousTxnID
+      };
+      
+      return { 
+        isValid: true, 
+        credential: formattedCredential 
+      };
+    } catch (error) {
+      if (error.data && error.data.error === "entryNotFound") {
+        console.log("Credential was not found");
+        return { isValid: false, error: "Credential not found" };
+      }
+      console.error("Error verifying credential:", error);
+      throw error;
+    }
+  }
+
+  convertStringToHex(str) {
+    let hex = '';
+    for (let i = 0; i < str.length; i++) {
+      const charCode = str.charCodeAt(i);
+      hex += charCode.toString(16).padStart(2, '0');
+    }
+    return hex;
+  }
+
+  async getWalletByAddress(address) {
+    try {
+      // This is a simplified implementation - in a real app, you would have
+      // a more secure way to retrieve wallet credentials
+      const store = useXRPLStore.getState();
+      
+      if (store.wallet && store.wallet.address === address) {
+        return xrpl.Wallet.fromSeed(store.wallet.seed);
+      }
+      
+      // For demo purposes, if the address is a provider address, create a test wallet
+      const mockProviders = store.providers || [];
+      const provider = mockProviders.find(p => p.address === address);
+      if (provider && provider.seed) {
+        return xrpl.Wallet.fromSeed(provider.seed);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error getting wallet by address:', error);
+      return null;
     }
   }
 }
