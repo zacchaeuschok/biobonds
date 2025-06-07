@@ -44,20 +44,22 @@ export function BondCard({ bond, onInvest, onViewDetails }) {
       
       <CardContent className="space-y-4">
         {/* Health Outcome */}
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <Heart className="w-4 h-4 text-red-500" />
           <span className="font-medium">Health Impact:</span>
-          <span className="text-muted-foreground">{bond.healthOutcome}</span>
+          <span className="text-muted-foreground break-words">{bond.healthOutcome}</span>
         </div>
 
         {/* Provider Info */}
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <MapPin className="w-4 h-4 text-blue-500" />
           <span className="font-medium">{bond.provider.name}</span>
-          <span className="text-muted-foreground">• {bond.provider.location}</span>
-          {bond.provider.verified && (
-            <Badge variant="outline" className="text-xs">Verified</Badge>
-          )}
+          <div className="flex items-center gap-1">
+            <span className="text-muted-foreground">• {bond.provider.location}</span>
+            {bond.provider.verified && (
+              <Badge variant="outline" className="text-xs ml-1">Verified</Badge>
+            )}
+          </div>
         </div>
 
         {/* Funding Progress */}
@@ -127,4 +129,3 @@ export function BondCard({ bond, onInvest, onViewDetails }) {
     </Card>
   );
 }
-

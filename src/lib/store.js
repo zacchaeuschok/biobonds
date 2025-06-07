@@ -10,19 +10,21 @@ export const useXRPLStore = create(
       walletAddress: null,
       balance: 0,
       client: null,
+      wallet: null,
       
       // User profile
       userProfile: null,
       userType: null,
       
       // Connection methods
-      connectWallet: async (address) => {
+      connectWallet: async (walletInfo) => {
         set({ 
           isConnected: true, 
-          walletAddress: address,
+          walletAddress: walletInfo.address,
+          wallet: walletInfo,
           userProfile: {
-            id: address,
-            walletAddress: address,
+            id: walletInfo.address,
+            walletAddress: walletInfo.address,
             userType: 'investor',
             verified: true,
             totalInvested: 0,
@@ -37,6 +39,7 @@ export const useXRPLStore = create(
           isConnected: false, 
           walletAddress: null, 
           balance: 0,
+          wallet: null,
           userProfile: null,
           userType: null
         });
@@ -64,6 +67,7 @@ export const useXRPLStore = create(
       partialize: (state) => ({
         isConnected: state.isConnected,
         walletAddress: state.walletAddress,
+        wallet: state.wallet,
         userProfile: state.userProfile,
         userType: state.userType
       })
@@ -121,4 +125,3 @@ export const useBioBondsStore = create((set, get) => ({
   
   clearError: () => set({ error: null })
 }));
-

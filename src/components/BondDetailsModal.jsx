@@ -71,7 +71,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
             <Card>
               <CardContent className="p-4 text-center">
                 <TrendingUp className="w-6 h-6 mx-auto mb-2 text-green-500" />
-                <div className="text-2xl font-bold text-green-600">
+                <div className="text-2xl font-bold text-green-600 truncate">
                   {(bond.yieldRate * 100).toFixed(1)}%
                 </div>
                 <div className="text-xs text-muted-foreground">Yield Rate</div>
@@ -81,7 +81,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
             <Card>
               <CardContent className="p-4 text-center">
                 <Target className="w-6 h-6 mx-auto mb-2 text-blue-500" />
-                <div className="text-2xl font-bold">
+                <div className="text-xl font-bold truncate" style={{ lineHeight: "1.2" }}>
                   ${bond.targetAmount.toLocaleString()}
                 </div>
                 <div className="text-xs text-muted-foreground">Target Amount</div>
@@ -91,7 +91,7 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
             <Card>
               <CardContent className="p-4 text-center">
                 <Users className="w-6 h-6 mx-auto mb-2 text-purple-500" />
-                <div className="text-2xl font-bold">
+                <div className="text-2xl font-bold truncate">
                   {progressPercentage.toFixed(0)}%
                 </div>
                 <div className="text-xs text-muted-foreground">Funded</div>
@@ -252,4 +252,3 @@ export function BondDetailsModal({ bond, isOpen, onClose, onInvest }) {
     </Dialog>
   );
 }
-

@@ -3,6 +3,8 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 import { 
   Wallet, 
   Plus, 
@@ -19,6 +21,7 @@ export function WalletConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState('');
   const [showAddress, setShowAddress] = useState(false);
+  const [fundAmount, setFundAmount] = useState('1000');
   
   const { 
     isConnected, 
@@ -34,14 +37,24 @@ export function WalletConnection() {
     setError('');
 
     try {
-      // Create a test wallet for demo purposes
-      const walletInfo = await xrplService.createTestWallet();
+      // Parse the fund amount
+      const amount = parseFloat(fundAmount);
       
-      await connectWallet(walletInfo.address);
+      if (isNaN(amount) || amount <= 0) {
+        throw new Error('Please enter a valid amount');
+      }
+      
+      // Create a test wallet with the specified amount
+      const walletInfo = await xrplService.createTestWallet(amount);
+      
+      // Connect wallet to store
+      await connectWallet(walletInfo);
       updateBalance(parseFloat(walletInfo.balance));
       
+      console.log('Test wallet created successfully:', walletInfo.address);
+      
     } catch (err) {
-      setError('Failed to connect wallet. Please try again.');
+      setError(err.message || 'Failed to connect wallet. Please try again.');
       console.error('Wallet connection error:', err);
     } finally {
       setIsConnecting(false);
@@ -64,6 +77,12 @@ export function WalletConnection() {
   const formatAddress = (address) => {
     if (!address) return '';
     return `${address.slice(0, 8)}...${address.slice(-6)}`;
+  };
+
+  const viewInExplorer = () => {
+    if (walletAddress) {
+      window.open(`https://test.bithomp.com/explorer/${walletAddress}`, '_blank');
+    }
   };
 
   if (!isConnected) {
@@ -90,23 +109,39 @@ export function WalletConnection() {
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-sm">
               This demo creates a test wallet with funded XRP on the XRPL testnet. 
-              In production, you would connect your existing XRPL wallet.
+              No real funds are used.
             </AlertDescription>
           </Alert>
-
+          
+          <div className="space-y-2">
+            <Label htmlFor="fundAmount">Initial Funding Amount (XRP)</Label>
+            <Input
+              id="fundAmount"
+              type="number"
+              value={fundAmount}
+              onChange={(e) => setFundAmount(e.target.value)}
+              placeholder="Enter XRP amount"
+              min="10"
+              max="10000"
+            />
+            <p className="text-xs text-muted-foreground">
+              Recommended: 1,000 - 10,000 XRP for testing
+            </p>
+          </div>
+          
           <Button 
-            onClick={handleConnect} 
-            className="w-full"
+            className="w-full" 
+            onClick={handleConnect}
             disabled={isConnecting}
           >
             {isConnecting ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Creating Test Wallet...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating Wallet...
               </>
             ) : (
               <>
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="mr-2 h-4 w-4" />
                 Create Test Wallet
               </>
             )}
@@ -175,7 +210,7 @@ export function WalletConnection() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => window.open('https://test.bithomp.com/explorer/', '_blank')}
+            onClick={viewInExplorer}
             className="flex-1"
           >
             <ExternalLink className="w-4 h-4 mr-2" />
@@ -194,4 +229,3 @@ export function WalletConnection() {
     </Card>
   );
 }
-
