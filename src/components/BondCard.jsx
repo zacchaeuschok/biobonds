@@ -7,8 +7,11 @@ import { Heart, MapPin, Calendar, TrendingUp, CheckCircle, Clock } from "lucide-
 export function BondCard({ bond, onInvest, onViewDetails }) {
   const progressPercentage = (bond.currentAmount / bond.targetAmount) * 100;
   
+  // Normalize status to lowercase for consistent comparison
+  const status = bond.status?.toLowerCase() || '';
+  
   const getStatusColor = (status) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'active': return 'bg-blue-500';
       case 'funded': return 'bg-green-500';
       case 'completed': return 'bg-purple-500';
@@ -18,7 +21,7 @@ export function BondCard({ bond, onInvest, onViewDetails }) {
   };
 
   const getStatusIcon = (status) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'completed': return <CheckCircle className="w-4 h-4" />;
       case 'active': return <Clock className="w-4 h-4" />;
       default: return <TrendingUp className="w-4 h-4" />;
@@ -35,9 +38,9 @@ export function BondCard({ bond, onInvest, onViewDetails }) {
               {bond.description}
             </CardDescription>
           </div>
-          <Badge className={`${getStatusColor(bond.status)} text-white flex items-center gap-1`}>
-            {getStatusIcon(bond.status)}
-            {bond.status.charAt(0).toUpperCase() + bond.status.slice(1)}
+          <Badge className={`${getStatusColor(status)} text-white flex items-center gap-1`}>
+            {getStatusIcon(status)}
+            {bond.status.charAt(0).toUpperCase() + bond.status.slice(1).toLowerCase()}
           </Badge>
         </div>
       </CardHeader>
@@ -115,7 +118,7 @@ export function BondCard({ bond, onInvest, onViewDetails }) {
           >
             View Details
           </Button>
-          {bond.status === 'active' && (
+          {status === 'active' && (
             <Button 
               size="sm" 
               onClick={() => onInvest(bond)}

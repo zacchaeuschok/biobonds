@@ -17,7 +17,8 @@ import {
   X,
   Wallet,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Loader2
 } from "lucide-react";
 
 // Import components
@@ -26,10 +27,11 @@ import { InvestmentModal } from './components/InvestmentModal';
 import { BondDetailsModal } from './components/BondDetailsModal';
 import { WalletConnection } from './components/WalletConnection';
 import { Portfolio } from './components/Portfolio';
+import { TrpcExample } from './components/TrpcExample';
 
 // Import stores and data
 import { useXRPLStore, useBioBondsStore } from './lib/store';
-import { mockBonds } from './lib/mockData';
+import { trpc } from './utils/trpc';
 
 import './App.css';
 
@@ -40,7 +42,8 @@ function Navigation() {
   const navItems = [
     { path: '/', label: 'Explore Bonds' },
     { path: '/portfolio', label: 'Portfolio' },
-    { path: '/about', label: 'About' }
+    { path: '/about', label: 'About' },
+    { path: '/api-test', label: 'API Test' }
   ];
 
   return (
@@ -115,19 +118,27 @@ function HomePage() {
   const [showBondDetails, setShowBondDetails] = useState(false);
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
   
-  const { bonds, setBonds } = useBioBondsStore();
+  const { setBonds } = useBioBondsStore();
   const { isConnected, walletAddress, balance } = useXRPLStore();
 
+  // Fetch bonds from the backend
+  const bondsQuery = trpc.bonds.getAll.useQuery();
+  const bonds = bondsQuery.data || [];
+
   useEffect(() => {
-    setBonds(mockBonds);
-  }, [setBonds]);
+    if (bondsQuery.data) {
+      setBonds(bondsQuery.data);
+    }
+  }, [bondsQuery.data, setBonds]);
 
   const filteredBonds = bonds.filter(bond => {
     const matchesSearch = bond.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          bond.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         bond.provider.name.toLowerCase().includes(searchTerm.toLowerCase());
+                         (bond.provider.name && bond.provider.name.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    const matchesStatus = statusFilter === 'all' || bond.status === statusFilter;
+    // Case-insensitive status matching
+    const matchesStatus = statusFilter === 'all' || 
+                         bond.status.toLowerCase() === statusFilter.toLowerCase();
     
     return matchesSearch && matchesStatus;
   });
@@ -461,6 +472,7 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/about" element={<AboutPage />} />
+            <Route path="/api-test" element={<TrpcExample />} />
           </Routes>
         </main>
 

@@ -8,19 +8,23 @@ import {
   Target,
   Calendar,
   CheckCircle,
-  Clock
+  Clock,
+  Loader2
 } from "lucide-react";
 import { useXRPLStore } from '../lib/store';
-import { 
-  mockInvestments, 
-  calculateTotalInvested, 
-  calculateTotalYield, 
-  getActiveBondsCount,
-  getBondById 
-} from '../lib/mockData';
+import { trpc } from '../utils/trpc';
 
 export function Portfolio() {
-  const { userProfile } = useXRPLStore();
+  const { userProfile, walletAddress } = useXRPLStore();
+  
+  // Fetch user investments from the backend
+  const investmentsQuery = trpc.investments.getUserInvestments.useQuery(
+    { walletAddress },
+    { enabled: !!walletAddress }
+  );
+  
+  // Fetch all bonds to reference in investments
+  const bondsQuery = trpc.bonds.getAll.useQuery();
   
   if (!userProfile) {
     return (
@@ -33,10 +37,53 @@ export function Portfolio() {
       </Card>
     );
   }
+  
+  if (investmentsQuery.isLoading || bondsQuery.isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+          <div className="text-muted-foreground">
+            Loading your portfolio...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  const investments = investmentsQuery.data || [];
+  const bonds = bondsQuery.data || [];
+  
+  const getBondById = (id) => bonds.find(bond => bond.id === id);
+  
+  const calculateTotalInvested = () => {
+    return investments.reduce((total, inv) => total + inv.amount, 0);
+  };
+  
+  const calculateTotalYield = () => {
+    return investments.reduce((total, inv) => {
+      const bond = getBondById(inv.bioBondId);
+      if (bond && bond.status === 'completed') {
+        return total + (inv.amount * (bond.targetYield / 100));
+      }
+      return total;
+    }, 0);
+  };
+  
+  const getActiveBondsCount = () => {
+    const activeBondIds = new Set();
+    investments.forEach(inv => {
+      const bond = getBondById(inv.bioBondId);
+      if (bond && bond.status === 'active') {
+        activeBondIds.add(inv.bioBondId);
+      }
+    });
+    return activeBondIds.size;
+  };
 
-  const totalInvested = calculateTotalInvested(mockInvestments);
-  const totalYield = calculateTotalYield(mockInvestments);
-  const activeBonds = getActiveBondsCount(mockInvestments);
+  const totalInvested = calculateTotalInvested();
+  const totalYield = calculateTotalYield();
+  const activeBonds = getActiveBondsCount();
   const totalValue = totalInvested + totalYield;
 
   return (
@@ -102,8 +149,8 @@ export function Portfolio() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {mockInvestments.map((investment) => {
-              const bond = getBondById(investment.bondId);
+            {investments.map((investment) => {
+              const bond = getBondById(investment.bioBondId);
               if (!bond) return null;
 
               const progressPercentage = (bond.currentAmount / bond.targetAmount) * 100;
@@ -221,4 +268,3 @@ export function Portfolio() {
     </div>
   );
 }
-

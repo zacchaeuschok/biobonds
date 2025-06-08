@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useXRPLStore, useBioBondsStore } from '../lib/store';
 import { xrplService } from '../lib/xrpl';
+import { trpc } from '../utils/trpc';
 
 export function InvestmentModal({ bond, isOpen, onClose }) {
   const [investmentAmount, setInvestmentAmount] = useState('');
@@ -37,8 +38,16 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
   const [actualBalance, setActualBalance] = useState(null);
   const [escrowData, setEscrowData] = useState(null);
   
-  const { wallet } = useXRPLStore();
-  const { addInvestment, updateBond } = useBioBondsStore();
+  const { wallet, walletAddress } = useXRPLStore();
+  const { updateBond } = useBioBondsStore();
+  
+  // tRPC mutations
+  const createInvestmentMutation = trpc.investments.create.useMutation();
+  const updateBondMutation = trpc.bonds.update.useMutation();
+  const bondsQuery = trpc.bonds.getAll.useQuery();
+  
+  // Refetch bonds after investment
+  const utils = trpc.useContext();
 
   useEffect(() => {
     const fetchActualBalance = async () => {
@@ -127,7 +136,7 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
         cancelAfter: cancelAfter
       });
       
-      // Create investment record
+      // Create investment record using tRPC
       const investment = {
         id: `inv_${Date.now()}`,
         bondId: bond.id,
@@ -142,15 +151,19 @@ export function InvestmentModal({ bond, isOpen, onClose }) {
         credentialType: `HealthOutcome_${bond.id}`
       };
 
-      // Update bond current amount
-      updateBond(bond.id, {
+      // Update bond current amount using tRPC
+      updateBondMutation.mutate({
+        id: bond.id,
         currentAmount: bond.currentAmount + amount
       });
-      
-      // Add investment to store
-      addInvestment(investment);
+
+      // Add investment to store using tRPC
+      createInvestmentMutation.mutate(investment);
       setSuccess(true);
       
+      // Refetch bonds after investment
+      utils.bonds.getAll.invalidate();
+
       // Reset form after success
       setTimeout(() => {
         setInvestmentAmount('');

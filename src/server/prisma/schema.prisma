@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String       @id @default(cuid())
+  walletAddress   String       @unique
+  userType        UserType
+  verified        Boolean      @default(false)
+  totalInvested   Float?
+  totalYieldEarned Float?
+  activeBonds     Int?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  investments     Investment[]
+  credentials     Credential[] @relation("SubjectCredentials")
+  issuedCredentials Credential[] @relation("IssuerCredentials")
+  bonds           BioBond[]    // For providers
+}
+
+enum UserType {
+  INVESTOR
+  PROVIDER
+  PATIENT
+}
+
+model BioBond {
+  id              String       @id @default(cuid())
+  title           String
+  description     String
+  healthOutcome   String
+  targetAmount    Float
+  currentAmount   Float        @default(0)
+  yieldRate       Float
+  maturityDate    DateTime
+  status          BondStatus
+  escrowAddress   String?
+  conditionHash   String?
+  providerId      String
+  provider        User         @relation(fields: [providerId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  investments     Investment[]
+  outcomes        Outcome[]
+  credentials     Credential[]
+}
+
+enum BondStatus {
+  ACTIVE
+  FUNDED
+  COMPLETED
+  EXPIRED
+}
+
+model Outcome {
+  id              String   @id @default(cuid())
+  bondId          String
+  bond            BioBond  @relation(fields: [bondId], references: [id])
+  target          String
+  achieved        Boolean  @default(false)
+  verificationDate DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Investment {
+  id              String       @id @default(cuid())
+  bondId          String
+  bond            BioBond      @relation(fields: [bondId], references: [id])
+  investorId      String
+  investor        User         @relation(fields: [investorId], references: [id])
+  amount          Float
+  investmentDate  DateTime
+  status          InvestmentStatus
+  yieldEarned     Float        @default(0)
+  escrowTxHash    String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+enum InvestmentStatus {
+  ACTIVE
+  SETTLED
+  CANCELLED
+}
+
+model Credential {
+  id              String       @id @default(cuid())
+  bondId          String
+  bond            BioBond      @relation(fields: [bondId], references: [id])
+  issuerId        String
+  issuer          User         @relation("IssuerCredentials", fields: [issuerId], references: [id])
+  subjectId       String
+  subject         User         @relation("SubjectCredentials", fields: [subjectId], references: [id])
+  issuerDid       String
+  subjectDid      String
+  credentialType  String
+  issuedAt        DateTime
+  expiresAt       DateTime?
+  verified        Boolean      @default(false)
+  outcomeData     Json
+  xrplTxHash      String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}

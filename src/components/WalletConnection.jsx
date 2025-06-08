@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useXRPLStore } from '../lib/store';
 import { xrplService } from '../lib/xrpl';
+import { trpc } from '../utils/trpc';
 
 export function WalletConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -31,6 +32,13 @@ export function WalletConnection() {
     disconnectWallet,
     updateBalance 
   } = useXRPLStore();
+  
+  // tRPC mutations
+  const createUserMutation = trpc.users.createOrUpdate.useMutation();
+  const getUserQuery = trpc.users.getByWalletAddress.useQuery(
+    { walletAddress },
+    { enabled: !!walletAddress }
+  );
 
   const handleConnect = async () => {
     setIsConnecting(true);
@@ -50,6 +58,13 @@ export function WalletConnection() {
       // Connect wallet to store with actual balance
       await connectWallet(walletInfo);
       updateBalance(parseFloat(walletInfo.balance));
+      
+      // Register user with backend
+      createUserMutation.mutate({
+        walletAddress: walletInfo.address,
+        name: `Investor ${walletInfo.address.substring(0, 5)}`,
+        type: 'INVESTOR'
+      });
       
       console.log('Test wallet created successfully:', walletInfo.address);
       

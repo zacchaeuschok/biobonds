@@ -143,23 +143,23 @@ class XRPLService {
 
   async getBalance(address) {
     try {
-      if (!this.isConnected) {
+      if (!this.isConnected || !this.client) {
         await this.connect();
+        // Wait a moment for the connection to fully establish
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
-      const accountInfo = await this.client.request({
-        command: 'account_info',
+      const response = await this.client.request({
+        command: "account_info",
         account: address,
-        ledger_index: 'validated'
+        ledger_index: "validated"
       });
       
-      // Convert from drops to XRP (1 XRP = 1,000,000 drops)
-      const balanceInDrops = accountInfo.result.account_data.Balance;
-      const balanceInXRP = xrpl.dropsToXrp(balanceInDrops);
-      
-      return parseFloat(balanceInXRP);
+      const balance = xrpl.dropsToXrp(response.result.account_data.Balance);
+      console.log(`Balance for ${address}: ${balance} XRP`);
+      return balance;
     } catch (error) {
-      console.error('Failed to get balance:', error);
+      console.error("Failed to get balance:", error);
       throw error;
     }
   }
